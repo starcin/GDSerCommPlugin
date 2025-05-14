@@ -16,7 +16,7 @@ void SerComm::_bind_methods()
 	ClassDB::bind_method(D_METHOD("read_serial", "num_bytes"), &SerComm::sercomm_read);
 	ClassDB::bind_method(D_METHOD("drain"), &SerComm::sercomm_drain);
 	ClassDB::bind_method(D_METHOD("write_serial", "p_message"), &SerComm::sercomm_write);
-	ADD_SIGNAL(MethodInfo("on_message", PropertyInfo(Variant::STRING, "message")));
+	ADD_SIGNAL(MethodInfo("on_message", PropertyInfo(Variant::PACKED_BYTE_ARRAY, "message")));
 
 	ClassDB::bind_method(D_METHOD("get_port"), &SerComm::get_port);
 	ClassDB::bind_method(D_METHOD("set_port", "id"), &SerComm::set_port);
@@ -164,12 +164,12 @@ bool SerComm::sercomm_open_specific_serial_port(const String& port_name)
 	return true;
 }
 
-String SerComm::sercomm_read(const int num_bytes)
+PackedByteArray SerComm::sercomm_read(const int num_bytes)
 {
 	std::vector<char> read_buffer;
 	if (num_bytes > read_buffer.max_size()) {
 		std::cerr << "Attempted to read " << num_bytes << " bytes, which is more than the maximum length supported (" << read_buffer.max_size() << " bytes)" << std::endl;
-		return "";
+		return PackedByteArray();
 	}
 	read_buffer = std::vector<char>(num_bytes);
 
@@ -178,13 +178,15 @@ String SerComm::sercomm_read(const int num_bytes)
 	if (result < 0)
 	{
 		std::cerr << "Error reading data from port" << std::endl;
-		return "";
+		return PackedByteArray();
 	}
 
-	read_buffer[result] = '\0';
-	String data = String::utf8(read_buffer.data());
+	read_buffer.resize(result);
+	PackedByteArray data;
+	data.resize(result);
+	memcpy(data.ptrw(), read_buffer.data(), result);
 
-	if (data.length() > 0)
+	if (data.size() > 0)
 	{
 		emit_signal("on_message", data);
 	}
@@ -199,18 +201,19 @@ void SerComm::sercomm_drain() {
 	}
 }
 
-void SerComm::sercomm_write(const String &p_message)
+void SerComm::sercomm_write(const PackedByteArray &p_message)
 {
-	const char *utf8_data = p_message.utf8().get_data();
+	const uint8_t *data = p_message.ptr();
+	int length = p_message.size();
 
-	sp_return result = sp_nonblocking_write(port, utf8_data, std::strlen(utf8_data));
+	sp_return result = sp_nonblocking_write(port, data, length);
 	if (result < 0)
 	{
 		std::cerr << "Error writing data to port" << std::endl;
 	}
 
-	// std::cout << "Writing output: " << utf8_data << std::endl;
-};
+	// std::cout << "Writing output: " << data << std::endl;
+}
 
 void SerComm::refresh_ports()
 {
